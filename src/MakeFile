@@ -1,0 +1,8 @@
+Game: game.o
+	g++ -I../include -L../lib game.o -o Game -lsfml-graphics -lsfml-window -lsfml-system
+
+game.o: game.cpp
+	g++ -I../include -c game.cpp
+
+clean:
+	del game.o Game.exe
