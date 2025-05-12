@@ -326,21 +326,25 @@ public:
             }
         }
 
-        if (!hasMoved && dy == 0 && abs(toX - boardX) == 2)
+        if (!hasMoved && dy == 0 && dx == 2)
         {
-            if (toX == boardX + 2 && !board[5][boardY] && !board[6][boardY] &&
-                board[7][boardY] && board[7][boardY]->getPieceType() == piecerook &&
-                !board[7][boardY]->getHasMoved())
+            int rookX = (toX > boardX) ? 7 : 0;
+            int step = (toX > boardX) ? 1 : -1;
+            int rookToX = (toX > boardX) ? 5 : 3;
+
+            if (!board[rookX][boardY] || board[rookX][boardY]->getPieceType() != piecerook ||
+                board[rookX][boardY]->getHasMoved())
             {
-                return true;
+                return false;
             }
-            if (toX == boardX - 2 && !board[3][boardY] && !board[2][boardY] &&
-                !board[1][boardY] && board[0][boardY] &&
-                board[0][boardY]->getPieceType() == piecerook &&
-                !board[0][boardY]->getHasMoved())
+
+            for (int x = boardX + step; x != rookX; x += step)
             {
-                return true;
+                if (board[x][boardY])
+                    return false;
             }
+
+            return true;
         }
 
         return false;
@@ -607,16 +611,16 @@ public:
         return false;
     }
 
-    bool wouldKingBeInCheck(ChessPiece *piece, int fromX, int fromY, int toX, int toY, bool isEnPassant = false, bool isCastling = false)
+    bool wouldKingBeInCheck(ChessPiece *piece, int fromX, int fromY, int toX, int toY, bool isEnPassant, bool isCastling)
     {
-        if (!piece || !pieceBoard || toX < 0 || toX >= 8 || toY < 0 || toY >= 8 || fromX < 0 || fromX >= 8 || fromY < 0 || fromY >= 8)
+        if (!piece || !pieceBoard || toX < 0 || toX >= 8 || toY < 0 || toY >= 8 ||
+            fromX < 0 || fromX >= 8 || fromY < 0 || fromY >= 8)
         {
             return false;
         }
 
         int playerColor = piece->getColor();
         ChessPiece *tempBoard[8][8];
-
         for (int i = 0; i < 8; i++)
             for (int j = 0; j < 8; j++)
                 tempBoard[i][j] = pieceBoard[i][j];
@@ -674,7 +678,7 @@ public:
         if (abs(toX - pawn->getBoardX()) == 1 && !pieceBoard[toX][toY])
         {
             ChessPiece *target = pieceBoard[toX][pawn->getBoardY()];
-            if (target == lastDoubleMovedPawn &&
+            if (target && target == lastDoubleMovedPawn &&
                 target->getPieceType() == piecepawn &&
                 target->getColor() != pawn->getColor() &&
                 lastMoveTurn == (currentTurn == colorwhite ? colorblack : colorwhite))
@@ -687,6 +691,8 @@ public:
 
     bool hasLegalMoves(int playerColor)
     {
+        if (!pieceBoard)
+            return false;
         for (int fromX = 0; fromX < 8; fromX++)
         {
             for (int fromY = 0; fromY < 8; fromY++)
@@ -927,96 +933,57 @@ public:
                 int col = (int)(mousePos.x / tilesize);
                 int row = (int)(mousePos.y / tilesize);
 
-                bool isEnPassant = isValidEnPassant(selectedPiece, col, row);
-                bool isCastling = selectedPiece->getPieceType() == pieceking &&
-                                  abs(col - selectedPiece->getBoardX()) == 2;
-                bool isValid = (col >= 0 && col < 8 && row >= 0 && row < 8 &&
-                                (selectedPiece->isValidMove(col, row, pieceBoard) || isEnPassant));
+                bool isValid = (col >= 0 && col < 8 && row >= 0 && row < 8);
+                bool isEnPassant = isValid && isValidEnPassant(selectedPiece, col, row);
+                bool isCastling = isValid && selectedPiece->getPieceType() == pieceking &&
+                                  abs(col - selectedPiece->getBoardX()) == 2 &&
+                                  row == selectedPiece->getBoardY();
+
+                if (isValid)
+                {
+                    isValid = selectedPiece->isValidMove(col, row, pieceBoard) || isEnPassant;
+                }
 
                 selectedPiece->getSprite().setPosition(
                     selectedPiece->getBoardX() * tilesize + tilesize / 4,
                     selectedPiece->getBoardY() * tilesize + tilesize / 4);
 
                 int kingX = -1, kingY = -1;
-                bool inCheck = findKingPosition(currentTurn, kingX, kingY, pieceBoard) &&
-                               isKingInCheck(currentTurn, kingX, kingY, pieceBoard);
                 bool moveAllowed = false;
                 if (isValid)
                 {
-                    ChessPiece *tempBoard[8][8];
-                    for (int i = 0; i < 8; i++)
-                        for (int j = 0; j < 8; j++)
-                            tempBoard[i][j] = pieceBoard[i][j];
-
-                    if (isEnPassant)
-                    {
-                        tempBoard[col][selectedPiece->getBoardY()] = nullptr;
-                    }
-                    else if (tempBoard[col][row])
-                    {
-                        tempBoard[col][row] = nullptr;
-                    }
-
-                    if (isCastling)
-                    {
-                        int rookFromX = (col > selectedPiece->getBoardX()) ? 7 : 0;
-                        int rookToX = (col > selectedPiece->getBoardX()) ? 5 : 3;
-                        ChessPiece *rook = tempBoard[rookFromX][selectedPiece->getBoardY()];
-                        if (rook)
-                        {
-                            tempBoard[rookFromX][selectedPiece->getBoardY()] = nullptr;
-                            tempBoard[rookToX][selectedPiece->getBoardY()] = rook;
-                        }
-                    }
-
-                    tempBoard[selectedPiece->getBoardX()][selectedPiece->getBoardY()] = nullptr;
-                    tempBoard[col][row] = selectedPiece;
-
-                    int newKingX, newKingY;
-                    if (selectedPiece->getPieceType() == pieceking)
-                    {
-                        newKingX = col;
-                        newKingY = row;
-                    }
-                    else
-                    {
-                        newKingX = kingX;
-                        newKingY = kingY;
-                    }
-
-                    bool stillInCheck = isKingInCheck(currentTurn, newKingX, newKingY, tempBoard);
-
-                    moveAllowed = (!inCheck && !stillInCheck) || (inCheck && !stillInCheck);
+                    moveAllowed = !wouldKingBeInCheck(selectedPiece, selectedPiece->getBoardX(),
+                                                      selectedPiece->getBoardY(), col, row,
+                                                      isEnPassant, isCastling);
                 }
 
-                if (isCastling && isValid)
+                if (isCastling && isValid && moveAllowed)
                 {
+                    int oldX = selectedPiece->getBoardX();
+                    int oldY = selectedPiece->getBoardY();
+                    bool inCheck = findKingPosition(currentTurn, kingX, kingY, pieceBoard) &&
+                                   isKingInCheck(currentTurn, kingX, kingY, pieceBoard);
                     if (inCheck)
                     {
                         isValid = false;
                         moveAllowed = false;
                     }
+                    else if (col > oldX)
+                    {
+                        if (wouldKingBeInCheck(selectedPiece, oldX, oldY, oldX + 1, oldY, false, false) ||
+                            wouldKingBeInCheck(selectedPiece, oldX, oldY, oldX + 2, oldY, false, false))
+                        {
+                            isValid = false;
+                            moveAllowed = false;
+                        }
+                    }
                     else
                     {
-                        int oldX = selectedPiece->getBoardX();
-                        int oldY = selectedPiece->getBoardY();
-                        if (col > oldX)
+                        if (wouldKingBeInCheck(selectedPiece, oldX, oldY, oldX - 1, oldY, false, false) ||
+                            wouldKingBeInCheck(selectedPiece, oldX, oldY, oldX - 2, oldY, false, false))
                         {
-                            if (wouldKingBeInCheck(selectedPiece, oldX, oldY, oldX + 1, oldY, false, false) ||
-                                wouldKingBeInCheck(selectedPiece, oldX, oldY, oldX + 2, oldY, false, false))
-                            {
-                                isValid = false;
-                                moveAllowed = false;
-                            }
-                        }
-                        else
-                        {
-                            if (wouldKingBeInCheck(selectedPiece, oldX, oldY, oldX - 1, oldY, false, false) ||
-                                wouldKingBeInCheck(selectedPiece, oldX, oldY, oldX - 2, oldY, false, false))
-                            {
-                                isValid = false;
-                                moveAllowed = false;
-                            }
+                            isValid = false;
+                            moveAllowed = false;
                         }
                     }
                 }
@@ -1142,8 +1109,11 @@ public:
                             {
                                 if (pieces[i] == selectedPiece)
                                 {
-                                    string texturePath = (selectedPiece->getColor() == colorwhite) ? "../textures/white_queen.png" : "../textures/black_queen.png";
-                                    ChessPiece *newQueen = new Queen(col * tilesize, row * tilesize, texturePath, selectedPiece->getColor());
+                                    string texturePath = (selectedPiece->getColor() == colorwhite)
+                                                             ? "../textures/white_queen.png"
+                                                             : "../textures/black_queen.png";
+                                    ChessPiece *newQueen = new Queen(col * tilesize, row * tilesize,
+                                                                     texturePath, selectedPiece->getColor());
                                     newQueen->setHasMoved(true);
                                     capturedPieces.push_back(pieces[i]);
                                     pieces[i] = newQueen;
@@ -1158,7 +1128,6 @@ public:
                     }
 
                     moveCount++;
-
                     currentTurn = (currentTurn == colorwhite) ? colorblack : colorwhite;
                     checkGameState();
                 }
@@ -1179,6 +1148,9 @@ public:
 
     void checkGameState()
     {
+        if (!pieceBoard)
+            return;
+
         bool whiteKingExists = false;
         bool blackKingExists = false;
 
@@ -1187,13 +1159,9 @@ public:
             if (pieces[i] && pieces[i]->getPieceType() == pieceking)
             {
                 if (pieces[i]->getColor() == colorwhite)
-                {
                     whiteKingExists = true;
-                }
                 else
-                {
                     blackKingExists = true;
-                }
             }
         }
 
@@ -1203,7 +1171,7 @@ public:
             saveGameRecord();
             return;
         }
-        else if (!blackKingExists)
+        if (!blackKingExists)
         {
             gameState = statewhitewon;
             saveGameRecord();
@@ -1211,22 +1179,19 @@ public:
         }
 
         int kingX = -1, kingY = -1;
-        if (findKingPosition(currentTurn, kingX, kingY, pieceBoard))
-        {
-            bool inCheck = isKingInCheck(currentTurn, kingX, kingY, pieceBoard);
-            bool hasMoves = hasLegalMoves(currentTurn);
+        if (!findKingPosition(currentTurn, kingX, kingY, pieceBoard))
+            return;
 
-            if (inCheck && !hasMoves)
-            {
-                gameState = (currentTurn == colorwhite) ? stateblackwon : statewhitewon;
-                saveGameRecord();
-            }
-            else if (!inCheck && !hasMoves)
-            {
-                gameState = statestalemate;
-                saveGameRecord();
-            }
-        }
+        bool inCheck = isKingInCheck(currentTurn, kingX, kingY, pieceBoard);
+        bool hasMoves = hasLegalMoves(currentTurn);
+
+        if (inCheck && !hasMoves)
+            gameState = (currentTurn == colorwhite) ? stateblackwon : statewhitewon;
+        else if (!inCheck && !hasMoves)
+            gameState = statestalemate;
+
+        if (gameState != stateplaying)
+            saveGameRecord();
     }
 
     void drawGame()
