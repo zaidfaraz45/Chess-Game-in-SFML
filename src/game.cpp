@@ -3,21 +3,30 @@
 #include <fstream>
 #include <ctime>
 #include <cstring>
+#include <vector>
 using namespace std;
 
-const int windowLength = 1000;
-const int windowWidth = 998;
-const float tileSize = windowWidth / 8.0f;
+const int windowlength = 1000;
+const int windowwidth = 998;
+const float tilesize = windowwidth / 8.0f;
 
-const int COLOR_WHITE = 0;
-const int COLOR_BLACK = 1;
-const int STATE_PLAYING = 0;
-const int STATE_WHITE_WON = 1;
-const int STATE_BLACK_WON = 2;
-const int STATE_STALEMATE = 3;
+const int colorwhite = 0;
+const int colorblack = 1;
+const int stateplaying = 0;
+const int statewhitewon = 1;
+const int stateblackwon = 2;
+const int statestalemate = 3;
+const int staterecords = 4;
 
-const int MAX_MOVES = 100;  // Max moves for history
-const int NAME_LENGTH = 50; // Max length for player names
+const int maxmoves = 100;
+const int namelength = 50;
+
+const int piecepawn = 0;
+const int piecerook = 1;
+const int pieceknight = 2;
+const int piecebishop = 3;
+const int piecequeen = 4;
+const int pieceking = 5;
 
 class ChessBoard
 {
@@ -30,7 +39,6 @@ public:
     {
         if (!texture.loadFromFile(image))
         {
-            cerr << "Error: Failed to load board texture: " << image << endl;
             throw runtime_error("Cannot load chess board texture");
         }
         sprite.setTexture(texture);
@@ -55,25 +63,26 @@ protected:
     int color;
     bool hasMoved;
     int boardX, boardY;
+    int pieceType;
 
 public:
-    ChessPiece(float x, float y, string i, int c) : posX(x), posY(y), image(i), color(c), hasMoved(false)
+    ChessPiece(float x, float y, string i, int c, int type) : posX(x), posY(y), image(i), color(c), hasMoved(false), pieceType(type)
     {
-        boardX = (int)(x / tileSize);
-        boardY = (int)(y / tileSize);
+        boardX = (int)(x / tilesize);
+        boardY = (int)(y / tilesize);
 
         if (!texture.loadFromFile(image))
         {
-            cerr << "Error: Failed to load texture: " << image << endl;
+            throw runtime_error("Cannot load texture: " + image);
         }
         sprite.setTexture(texture);
-        sprite.setPosition(posX + tileSize / 4, posY + tileSize / 4);
-        float scaleX = tileSize / texture.getSize().x / 2;
-        float scaleY = tileSize / texture.getSize().y / 2;
+        sprite.setPosition(posX + tilesize / 4, posY + tilesize / 4);
+        float scaleX = tilesize / texture.getSize().x / 2;
+        float scaleY = tilesize / texture.getSize().y / 2;
         sprite.setScale(scaleX, scaleY);
     }
 
-    virtual void draw(sf::RenderWindow &window)
+    void draw(sf::RenderWindow &window)
     {
         window.draw(sprite);
     }
@@ -82,10 +91,9 @@ public:
     {
         posX = x;
         posY = y;
-        boardX = (int)(x / tileSize);
-        boardY = (int)(y / tileSize);
-        sprite.setPosition(posX + tileSize / 4, posY + tileSize / 4);
-        hasMoved = true;
+        boardX = (int)(x / tilesize);
+        boardY = (int)(y / tilesize);
+        sprite.setPosition(posX + tilesize / 4, posY + tilesize / 4);
     }
 
     void setHasMoved(bool moved) { hasMoved = moved; }
@@ -95,6 +103,7 @@ public:
     int getBoardX() const { return boardX; }
     int getBoardY() const { return boardY; }
     bool getHasMoved() const { return hasMoved; }
+    int getPieceType() const { return pieceType; }
 
     virtual bool isValidMove(int toX, int toY, ChessPiece *board[8][8]) = 0;
     virtual ~ChessPiece() {}
@@ -103,13 +112,14 @@ public:
 class Pawn : public ChessPiece
 {
 public:
-    Pawn(float x, float y, string i, int c) : ChessPiece(x, y, i, c) {}
+    Pawn(float x, float y, string i, int c) : ChessPiece(x, y, i, c, piecepawn) {}
 
     bool isValidMove(int toX, int toY, ChessPiece *board[8][8]) override
     {
-        int direction = (color == COLOR_WHITE) ? -1 : 1;
-        int startRow = (color == COLOR_WHITE) ? 6 : 1;
-        int enPassantRow = (color == COLOR_WHITE) ? 3 : 4;
+        if (!board || toX < 0 || toX >= 8 || toY < 0 || toY >= 8)
+            return false;
+        int direction = (color == colorwhite) ? -1 : 1;
+        int startRow = (color == colorwhite) ? 6 : 1;
 
         if (toX == boardX && toY == boardY + direction && !board[toX][toY])
         {
@@ -130,18 +140,6 @@ public:
             return true;
         }
 
-        if ((toX == boardX + 1 || toX == boardX - 1) &&
-            toY == boardY + direction &&
-            !board[toX][toY] && boardY == enPassantRow)
-        {
-            ChessPiece *adjacent = board[toX][boardY];
-            if (adjacent && adjacent->getColor() != color &&
-                dynamic_cast<Pawn *>(adjacent))
-            {
-                return true;
-            }
-        }
-
         return false;
     }
 };
@@ -149,10 +147,12 @@ public:
 class Rook : public ChessPiece
 {
 public:
-    Rook(float x, float y, string i, int c) : ChessPiece(x, y, i, c) {}
+    Rook(float x, float y, string i, int c) : ChessPiece(x, y, i, c, piecerook) {}
 
     bool isValidMove(int toX, int toY, ChessPiece *board[8][8]) override
     {
+        if (!board || toX < 0 || toX >= 8 || toY < 0 || toY >= 8)
+            return false;
         if (toX == boardX && toY == boardY)
             return false;
         if (toX != boardX && toY != boardY)
@@ -189,10 +189,12 @@ public:
 class Knight : public ChessPiece
 {
 public:
-    Knight(float x, float y, string i, int c) : ChessPiece(x, y, i, c) {}
+    Knight(float x, float y, string i, int c) : ChessPiece(x, y, i, c, pieceknight) {}
 
     bool isValidMove(int toX, int toY, ChessPiece *board[8][8]) override
     {
+        if (!board || toX < 0 || toX >= 8 || toY < 0 || toY >= 8)
+            return false;
         int dx = abs(toX - boardX);
         int dy = abs(toY - boardY);
 
@@ -211,10 +213,12 @@ public:
 class Bishop : public ChessPiece
 {
 public:
-    Bishop(float x, float y, string i, int c) : ChessPiece(x, y, i, c) {}
+    Bishop(float x, float y, string i, int c) : ChessPiece(x, y, i, c, piecebishop) {}
 
     bool isValidMove(int toX, int toY, ChessPiece *board[8][8]) override
     {
+        if (!board || toX < 0 || toX >= 8 || toY < 0 || toY >= 8)
+            return false;
         if (toX == boardX && toY == boardY)
             return false;
         if (abs(toX - boardX) != abs(toY - boardY))
@@ -245,10 +249,12 @@ public:
 class Queen : public ChessPiece
 {
 public:
-    Queen(float x, float y, string i, int c) : ChessPiece(x, y, i, c) {}
+    Queen(float x, float y, string i, int c) : ChessPiece(x, y, i, c, piecequeen) {}
 
     bool isValidMove(int toX, int toY, ChessPiece *board[8][8]) override
     {
+        if (!board || toX < 0 || toX >= 8 || toY < 0 || toY >= 8)
+            return false;
         if (toX == boardX && toY == boardY)
             return false;
         if (toX != boardX && toY != boardY &&
@@ -303,10 +309,12 @@ public:
 class King : public ChessPiece
 {
 public:
-    King(float x, float y, string i, int c) : ChessPiece(x, y, i, c) {}
+    King(float x, float y, string i, int c) : ChessPiece(x, y, i, c, pieceking) {}
 
     bool isValidMove(int toX, int toY, ChessPiece *board[8][8]) override
     {
+        if (!board || toX < 0 || toX >= 8 || toY < 0 || toY >= 8)
+            return false;
         int dx = abs(toX - boardX);
         int dy = abs(toY - boardY);
 
@@ -321,14 +329,14 @@ public:
         if (!hasMoved && dy == 0 && abs(toX - boardX) == 2)
         {
             if (toX == boardX + 2 && !board[5][boardY] && !board[6][boardY] &&
-                board[7][boardY] && dynamic_cast<Rook *>(board[7][boardY]) &&
+                board[7][boardY] && board[7][boardY]->getPieceType() == piecerook &&
                 !board[7][boardY]->getHasMoved())
             {
                 return true;
             }
             if (toX == boardX - 2 && !board[3][boardY] && !board[2][boardY] &&
                 !board[1][boardY] && board[0][boardY] &&
-                dynamic_cast<Rook *>(board[0][boardY]) &&
+                board[0][boardY]->getPieceType() == piecerook &&
                 !board[0][boardY]->getHasMoved())
             {
                 return true;
@@ -360,7 +368,6 @@ class ChessGame
     ChessPiece *lastDoubleMovedPawn;
     int lastMoveTurn;
 
-    // Time control
     bool useTime;
     float whiteTime;
     float blackTime;
@@ -370,25 +377,43 @@ class ChessGame
     sf::Text blackTimerText;
     bool fontLoaded;
 
-    // Move history (raw pointers, no struct)
-    int *moveHistory; // Array: [piece_idx, fromX, fromY, toX, toY, captured_idx, isEnPassant, isCastling, rookFromX, rookToX, pieceHasMoved, rookHasMoved, promoted_idx, lastDoubleMovedPawn_idx, lastMoveTurn]
+    int *moveHistory;
     int moveCount;
     int moveCapacity;
 
-    // Player names
     char *whitePlayerName;
     char *blackPlayerName;
 
+    vector<string> gameRecords;
+    vector<ChessPiece *> capturedPieces;
+    bool keyPressed;
+
 public:
-    ChessGame(bool timed = false) : pieceCount(0), selectedPiece(nullptr), currentTurn(COLOR_WHITE),
-                                    gameState(STATE_PLAYING), lastDoubleMovedPawn(nullptr), lastMoveTurn(0),
+    ChessGame(bool timed = false) : pieceCount(0), selectedPiece(nullptr), currentTurn(colorwhite),
+                                    gameState(stateplaying), lastDoubleMovedPawn(nullptr), lastMoveTurn(0),
                                     useTime(timed), whiteTime(600.0f), blackTime(600.0f), moveCount(0),
-                                    moveCapacity(MAX_MOVES), fontLoaded(false)
+                                    moveCapacity(maxmoves), fontLoaded(false), keyPressed(false)
     {
-        window.create(sf::VideoMode(windowLength, windowWidth), "Chess Game");
+        whitePlayerName = new char[namelength];
+        blackPlayerName = new char[namelength];
+        if (!whitePlayerName || !blackPlayerName)
+        {
+            throw runtime_error("Memory allocation failed for player names");
+        }
+        for (int i = 0; i < namelength; i++)
+        {
+            whitePlayerName[i] = '\0';
+            blackPlayerName[i] = '\0';
+        }
+
+        cout << "Enter White player's name: ";
+        cin.getline(whitePlayerName, namelength);
+        cout << "Enter Black player's name: ";
+        cin.getline(blackPlayerName, namelength);
+
+        window.create(sf::VideoMode(windowlength, windowwidth), "Chess Game");
         if (!window.isOpen())
         {
-            cerr << "Error: Failed to create SFML window" << endl;
             throw runtime_error("Window creation failed");
         }
 
@@ -398,14 +423,13 @@ public:
         }
         catch (const runtime_error &e)
         {
-            cerr << e.what() << endl;
             window.close();
             throw;
         }
 
-        highlight.setSize(sf::Vector2f(tileSize, tileSize));
+        highlight.setSize(sf::Vector2f(tilesize, tilesize));
         highlight.setFillColor(sf::Color(255, 255, 0, 100));
-        moveIndicator.setRadius(tileSize / 6);
+        moveIndicator.setRadius(tilesize / 6);
         moveIndicator.setFillColor(sf::Color(0, 255, 0, 100));
 
         for (int i = 0; i < 8; i++)
@@ -420,53 +444,29 @@ public:
             pieces[i] = nullptr;
         }
 
-        moveHistory = new int[moveCapacity * 15];
+        moveHistory = new int[moveCapacity * 16];
         if (!moveHistory)
         {
-            cerr << "Error: Failed to allocate moveHistory" << endl;
             window.close();
             throw runtime_error("Memory allocation failed for moveHistory");
         }
-        for (int i = 0; i < moveCapacity * 15; i++)
+        for (int i = 0; i < moveCapacity * 16; i++)
         {
             moveHistory[i] = -1;
         }
-
-        whitePlayerName = new char[NAME_LENGTH];
-        blackPlayerName = new char[NAME_LENGTH];
-        if (!whitePlayerName || !blackPlayerName)
-        {
-            cerr << "Error: Failed to allocate memory for player names" << endl;
-            window.close();
-            throw runtime_error("Memory allocation failed for player names");
-        }
-        for (int i = 0; i < NAME_LENGTH; i++)
-        {
-            whitePlayerName[i] = '\0';
-            blackPlayerName[i] = '\0';
-        }
-
-        cout << "Enter White player's name: ";
-        cin.getline(whitePlayerName, NAME_LENGTH);
-        cout << "Enter Black player's name: ";
-        cin.getline(blackPlayerName, NAME_LENGTH);
 
         if (useTime && font.loadFromFile("../fonts/arial.ttf"))
         {
             fontLoaded = true;
             whiteTimerText.setFont(font);
             whiteTimerText.setCharacterSize(30);
-            whiteTimerText.setFillColor(sf::Color(50, 50, 50)); // Dark gray
-            whiteTimerText.setPosition(10, windowWidth - 40);
+            whiteTimerText.setFillColor(sf::Color(50, 50, 50));
+            whiteTimerText.setPosition(10, windowwidth - 40);
 
             blackTimerText.setFont(font);
             blackTimerText.setCharacterSize(30);
-            blackTimerText.setFillColor(sf::Color(50, 50, 50)); // Dark gray
+            blackTimerText.setFillColor(sf::Color(50, 50, 50));
             blackTimerText.setPosition(10, 10);
-        }
-        else if (useTime)
-        {
-            cerr << "Warning: Failed to load font ../fonts/arial.ttf. Timers will not be displayed." << endl;
         }
 
         initializePieces();
@@ -476,47 +476,52 @@ public:
     {
         for (int i = 0; i < 8; i++)
         {
-            pieces[pieceCount] = new Pawn(i * tileSize, 6 * tileSize, "../textures/white_pawn.png", COLOR_WHITE);
+            pieces[pieceCount] = new Pawn(i * tilesize, 6 * tilesize, "../textures/white_pawn.png", colorwhite);
             pieceBoard[i][6] = pieces[pieceCount++];
-            pieces[pieceCount] = new Pawn(i * tileSize, 1 * tileSize, "../textures/black_pawn.png", COLOR_BLACK);
+            pieces[pieceCount] = new Pawn(i * tilesize, 1 * tilesize, "../textures/black_pawn.png", colorblack);
             pieceBoard[i][1] = pieces[pieceCount++];
         }
-        pieces[pieceCount] = new Rook(0 * tileSize, 7 * tileSize, "../textures/white_rook.png", COLOR_WHITE);
+        pieces[pieceCount] = new Rook(0 * tilesize, 7 * tilesize, "../textures/white_rook.png", colorwhite);
         pieceBoard[0][7] = pieces[pieceCount++];
-        pieces[pieceCount] = new Rook(7 * tileSize, 7 * tileSize, "../textures/white_rook.png", COLOR_WHITE);
+        pieces[pieceCount] = new Rook(7 * tilesize, 7 * tilesize, "../textures/white_rook.png", colorwhite);
         pieceBoard[7][7] = pieces[pieceCount++];
-        pieces[pieceCount] = new Rook(0 * tileSize, 0 * tileSize, "../textures/black_rook.png", COLOR_BLACK);
+        pieces[pieceCount] = new Rook(0 * tilesize, 0 * tilesize, "../textures/black_rook.png", colorblack);
         pieceBoard[0][0] = pieces[pieceCount++];
-        pieces[pieceCount] = new Rook(7 * tileSize, 0 * tileSize, "../textures/black_rook.png", COLOR_BLACK);
+        pieces[pieceCount] = new Rook(7 * tilesize, 0 * tilesize, "../textures/black_rook.png", colorblack);
         pieceBoard[7][0] = pieces[pieceCount++];
-        pieces[pieceCount] = new Knight(1 * tileSize, 7 * tileSize, "../textures/white_knight.png", COLOR_WHITE);
+        pieces[pieceCount] = new Knight(1 * tilesize, 7 * tilesize, "../textures/white_knight.png", colorwhite);
         pieceBoard[1][7] = pieces[pieceCount++];
-        pieces[pieceCount] = new Knight(6 * tileSize, 7 * tileSize, "../textures/white_knight.png", COLOR_WHITE);
+        pieces[pieceCount] = new Knight(6 * tilesize, 7 * tilesize, "../textures/white_knight.png", colorwhite);
         pieceBoard[6][7] = pieces[pieceCount++];
-        pieces[pieceCount] = new Knight(1 * tileSize, 0 * tileSize, "../textures/black_knight.png", COLOR_BLACK);
+        pieces[pieceCount] = new Knight(1 * tilesize, 0 * tilesize, "../textures/black_knight.png", colorblack);
         pieceBoard[1][0] = pieces[pieceCount++];
-        pieces[pieceCount] = new Knight(6 * tileSize, 0 * tileSize, "../textures/black_knight.png", COLOR_BLACK);
+        pieces[pieceCount] = new Knight(6 * tilesize, 0 * tilesize, "../textures/black_knight.png", colorblack);
         pieceBoard[6][0] = pieces[pieceCount++];
-        pieces[pieceCount] = new Bishop(2 * tileSize, 7 * tileSize, "../textures/white_bishop.png", COLOR_WHITE);
+        pieces[pieceCount] = new Bishop(2 * tilesize, 7 * tilesize, "../textures/white_bishop.png", colorwhite);
         pieceBoard[2][7] = pieces[pieceCount++];
-        pieces[pieceCount] = new Bishop(5 * tileSize, 7 * tileSize, "../textures/white_bishop.png", COLOR_WHITE);
+        pieces[pieceCount] = new Bishop(5 * tilesize, 7 * tilesize, "../textures/white_bishop.png", colorwhite);
         pieceBoard[5][7] = pieces[pieceCount++];
-        pieces[pieceCount] = new Bishop(2 * tileSize, 0 * tileSize, "../textures/black_bishop.png", COLOR_BLACK);
+        pieces[pieceCount] = new Bishop(2 * tilesize, 0 * tilesize, "../textures/black_bishop.png", colorblack);
         pieceBoard[2][0] = pieces[pieceCount++];
-        pieces[pieceCount] = new Bishop(5 * tileSize, 0 * tileSize, "../textures/black_bishop.png", COLOR_BLACK);
+        pieces[pieceCount] = new Bishop(5 * tilesize, 0 * tilesize, "../textures/black_bishop.png", colorblack);
         pieceBoard[5][0] = pieces[pieceCount++];
-        pieces[pieceCount] = new Queen(3 * tileSize, 7 * tileSize, "../textures/white_queen.png", COLOR_WHITE);
+        pieces[pieceCount] = new Queen(3 * tilesize, 7 * tilesize, "../textures/white_queen.png", colorwhite);
         pieceBoard[3][7] = pieces[pieceCount++];
-        pieces[pieceCount] = new Queen(3 * tileSize, 0 * tileSize, "../textures/black_queen.png", COLOR_BLACK);
+        pieces[pieceCount] = new Queen(3 * tilesize, 0 * tilesize, "../textures/black_queen.png", colorblack);
         pieceBoard[3][0] = pieces[pieceCount++];
-        pieces[pieceCount] = new King(4 * tileSize, 7 * tileSize, "../textures/white_king.png", COLOR_WHITE);
+        pieces[pieceCount] = new King(4 * tilesize, 7 * tilesize, "../textures/white_king.png", colorwhite);
         pieceBoard[4][7] = pieces[pieceCount++];
-        pieces[pieceCount] = new King(4 * tileSize, 0 * tileSize, "../textures/black_king.png", COLOR_BLACK);
+        pieces[pieceCount] = new King(4 * tilesize, 0 * tilesize, "../textures/black_king.png", colorblack);
         pieceBoard[4][0] = pieces[pieceCount++];
     }
 
     void run()
     {
+        if (useTime)
+        {
+            gameClock.restart();
+        }
+
         while (window.isOpen())
         {
             sf::Event event;
@@ -528,21 +533,18 @@ public:
                     window.close();
                 }
 
-                if (gameState == STATE_PLAYING)
-                {
-                    handleGameEvents(event);
-                }
+                handleGameEvents(event);
             }
 
-            if (useTime && gameState == STATE_PLAYING)
+            if (useTime && gameState == stateplaying)
             {
                 float deltaTime = gameClock.restart().asSeconds();
-                if (currentTurn == COLOR_WHITE)
+                if (currentTurn == colorwhite)
                 {
                     whiteTime -= deltaTime;
                     if (whiteTime <= 0)
                     {
-                        gameState = STATE_BLACK_WON;
+                        gameState = stateblackwon;
                         saveGameRecord();
                     }
                 }
@@ -551,7 +553,7 @@ public:
                     blackTime -= deltaTime;
                     if (blackTime <= 0)
                     {
-                        gameState = STATE_WHITE_WON;
+                        gameState = statewhitewon;
                         saveGameRecord();
                     }
                 }
@@ -563,27 +565,41 @@ public:
         }
     }
 
-    bool isKingInCheck(int playerColor)
+    bool isKingInCheck(int playerColor, int kingX, int kingY, ChessPiece *board[8][8])
     {
-        int kingX = -1, kingY = -1;
-        for (int i = 0; i < pieceCount; i++)
-        {
-            if (pieces[i] && dynamic_cast<King *>(pieces[i]) && pieces[i]->getColor() == playerColor)
-            {
-                kingX = pieces[i]->getBoardX();
-                kingY = pieces[i]->getBoardY();
-                break;
-            }
-        }
-        if (kingX == -1)
+        if (!board || kingX < 0 || kingX >= 8 || kingY < 0 || kingY >= 8)
             return false;
 
-        for (int i = 0; i < pieceCount; i++)
+        for (int x = 0; x < 8; x++)
         {
-            if (pieces[i] && pieces[i]->getColor() != playerColor)
+            for (int y = 0; y < 8; y++)
             {
-                if (pieces[i]->isValidMove(kingX, kingY, pieceBoard))
+                ChessPiece *piece = board[x][y];
+                if (piece && piece->getColor() != playerColor)
                 {
+                    if (piece->isValidMove(kingX, kingY, board))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    bool findKingPosition(int playerColor, int &kingX, int &kingY, ChessPiece *board[8][8])
+    {
+        if (!board)
+            return false;
+        for (int x = 0; x < 8; x++)
+        {
+            for (int y = 0; y < 8; y++)
+            {
+                ChessPiece *piece = board[x][y];
+                if (piece && piece->getPieceType() == pieceking && piece->getColor() == playerColor)
+                {
+                    kingX = x;
+                    kingY = y;
                     return true;
                 }
             }
@@ -593,20 +609,24 @@ public:
 
     bool wouldKingBeInCheck(ChessPiece *piece, int fromX, int fromY, int toX, int toY, bool isEnPassant = false, bool isCastling = false)
     {
+        if (!piece || !pieceBoard || toX < 0 || toX >= 8 || toY < 0 || toY >= 8 || fromX < 0 || fromX >= 8 || fromY < 0 || fromY >= 8)
+        {
+            return false;
+        }
+
+        int playerColor = piece->getColor();
         ChessPiece *tempBoard[8][8];
+
         for (int i = 0; i < 8; i++)
             for (int j = 0; j < 8; j++)
                 tempBoard[i][j] = pieceBoard[i][j];
 
-        ChessPiece *captured = nullptr;
         if (isEnPassant)
         {
-            captured = tempBoard[toX][fromY];
             tempBoard[toX][fromY] = nullptr;
         }
         else if (tempBoard[toX][toY])
         {
-            captured = tempBoard[toX][toY];
             tempBoard[toX][toY] = nullptr;
         }
 
@@ -615,37 +635,39 @@ public:
             int rookFromX = (toX > fromX) ? 7 : 0;
             int rookToX = (toX > fromX) ? 5 : 3;
             ChessPiece *rook = tempBoard[rookFromX][fromY];
-            tempBoard[rookFromX][fromY] = nullptr;
-            tempBoard[rookToX][fromY] = rook;
+            if (rook)
+            {
+                tempBoard[rookFromX][fromY] = nullptr;
+                tempBoard[rookToX][fromY] = rook;
+            }
         }
 
         tempBoard[fromX][fromY] = nullptr;
         tempBoard[toX][toY] = piece;
 
-        bool inCheck = isKingInCheck(piece->getColor());
-
-        tempBoard[fromX][fromY] = piece;
-        tempBoard[toX][toY] = isEnPassant ? nullptr : captured;
-        if (isEnPassant)
-            tempBoard[toX][fromY] = captured;
-        if (isCastling)
+        int kingX, kingY;
+        if (piece->getPieceType() == pieceking)
         {
-            int rookFromX = (toX > fromX) ? 7 : 0;
-            int rookToX = (toX > fromX) ? 5 : 3;
-            ChessPiece *rook = tempBoard[rookToX][fromY];
-            tempBoard[rookToX][fromY] = nullptr;
-            tempBoard[rookFromX][fromY] = rook;
+            kingX = toX;
+            kingY = toY;
+        }
+        else
+        {
+            if (!findKingPosition(playerColor, kingX, kingY, tempBoard))
+            {
+                return false;
+            }
         }
 
-        return inCheck;
+        return isKingInCheck(playerColor, kingX, kingY, tempBoard);
     }
 
     bool isValidEnPassant(ChessPiece *pawn, int toX, int toY)
     {
-        if (!dynamic_cast<Pawn *>(pawn))
+        if (!pawn || pawn->getPieceType() != piecepawn || toX < 0 || toX >= 8 || toY < 0 || toY >= 8)
             return false;
 
-        int direction = (pawn->getColor() == COLOR_WHITE) ? -1 : 1;
+        int direction = (pawn->getColor() == colorwhite) ? -1 : 1;
         if (toY != pawn->getBoardY() + direction)
             return false;
 
@@ -653,9 +675,9 @@ public:
         {
             ChessPiece *target = pieceBoard[toX][pawn->getBoardY()];
             if (target == lastDoubleMovedPawn &&
-                dynamic_cast<Pawn *>(target) &&
+                target->getPieceType() == piecepawn &&
                 target->getColor() != pawn->getColor() &&
-                lastMoveTurn == (currentTurn == COLOR_WHITE ? COLOR_BLACK : COLOR_WHITE))
+                lastMoveTurn == (currentTurn == colorwhite ? colorblack : colorwhite))
             {
                 return true;
             }
@@ -663,13 +685,43 @@ public:
         return false;
     }
 
+    bool hasLegalMoves(int playerColor)
+    {
+        for (int fromX = 0; fromX < 8; fromX++)
+        {
+            for (int fromY = 0; fromY < 8; fromY++)
+            {
+                ChessPiece *piece = pieceBoard[fromX][fromY];
+                if (!piece || piece->getColor() != playerColor)
+                {
+                    continue;
+                }
+                for (int toX = 0; toX < 8; toX++)
+                {
+                    for (int toY = 0; toY < 8; toY++)
+                    {
+                        bool isEnPassant = isValidEnPassant(piece, toX, toY);
+                        bool isCastling = piece->getPieceType() == pieceking &&
+                                          abs(toX - fromX) == 2 && toY == fromY;
+                        if ((piece->isValidMove(toX, toY, pieceBoard) || isEnPassant) &&
+                            !wouldKingBeInCheck(piece, fromX, fromY, toX, toY, isEnPassant, isCastling))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     void undoMove()
     {
-        if (moveCount == 0)
+        if (moveCount <= 0)
             return;
 
         moveCount--;
-        int idx = moveCount * 15;
+        int idx = moveCount * 16;
 
         int pieceIdx = moveHistory[idx];
         int fromX = moveHistory[idx + 1];
@@ -683,66 +735,81 @@ public:
         int rookToX = moveHistory[idx + 9];
         bool pieceHasMoved = moveHistory[idx + 10] == 1;
         bool rookHasMoved = moveHistory[idx + 11] == 1;
-        int promotedIdx = moveHistory[idx + 12];
-        int lastDoubleMovedPawnIdx = moveHistory[idx + 13];
-        int lastMoveTurnBefore = moveHistory[idx + 14];
+        int originalPieceType = moveHistory[idx + 12];
+        int promotedIdx = moveHistory[idx + 13];
+        int lastDoubleMovedPawnIdx = moveHistory[idx + 14];
+        int lastMoveTurnBefore = moveHistory[idx + 15];
 
-        ChessPiece *piece = pieces[pieceIdx];
-        pieceBoard[toX][toY] = nullptr;
-        pieceBoard[fromX][fromY] = piece;
-        piece->setPosition(fromX * tileSize, fromY * tileSize);
-        piece->setHasMoved(pieceHasMoved);
+        ChessPiece *piece = pieceIdx >= 0 && pieceIdx < 32 ? pieces[pieceIdx] : nullptr;
+        if (!piece || fromX < 0 || fromX >= 8 || fromY < 0 || fromY >= 8 || toX < 0 || toX >= 8 || toY < 0 || toY >= 8)
+            return;
 
-        if (capturedIdx != -1)
+        if (promotedIdx != -1 && originalPieceType == piecepawn)
         {
-            for (int i = 0; i < pieceCount; i++)
+            for (int i = 0; i < 32; i++)
             {
-                if (!pieces[i])
+                if (pieces[i] == piece)
                 {
-                    pieces[i] = pieces[capturedIdx];
+                    string texturePath = (piece->getColor() == colorwhite) ? "../textures/white_pawn.png" : "../textures/black_pawn.png";
+                    ChessPiece *newPiece = new Pawn(fromX * tilesize, fromY * tilesize, texturePath, piece->getColor());
+                    newPiece->setHasMoved(pieceHasMoved);
+                    capturedPieces.push_back(pieces[i]);
+                    pieces[i] = newPiece;
+                    piece = newPiece;
                     break;
                 }
             }
-            if (isEnPassant)
+        }
+
+        pieceBoard[toX][toY] = nullptr;
+        pieceBoard[fromX][fromY] = piece;
+        piece->setPosition(fromX * tilesize, fromY * tilesize);
+        piece->setHasMoved(pieceHasMoved);
+
+        if (capturedIdx >= 0 && capturedIdx < (int)capturedPieces.size())
+        {
+            ChessPiece *capturedPiece = capturedPieces[capturedIdx];
+            if (capturedPiece)
             {
-                pieceBoard[toX][fromY] = pieces[capturedIdx];
-            }
-            else
-            {
-                pieceBoard[toX][toY] = pieces[capturedIdx];
+                for (int i = 0; i < 32; i++)
+                {
+                    if (!pieces[i])
+                    {
+                        pieces[i] = capturedPiece;
+                        break;
+                    }
+                }
+                if (isEnPassant)
+                {
+                    pieceBoard[toX][fromY] = capturedPiece;
+                    capturedPiece->setPosition(toX * tilesize, fromY * tilesize);
+                }
+                else
+                {
+                    pieceBoard[toX][toY] = capturedPiece;
+                    capturedPiece->setPosition(toX * tilesize, toY * tilesize);
+                }
+                capturedPieces[capturedIdx] = nullptr;
             }
         }
 
         if (isCastling)
         {
             ChessPiece *rook = pieceBoard[rookToX][fromY];
-            pieceBoard[rookToX][fromY] = nullptr;
-            pieceBoard[rookFromX][fromY] = rook;
-            rook->setPosition(rookFromX * tileSize, fromY * tileSize);
-            rook->setHasMoved(rookHasMoved);
-        }
-
-        if (promotedIdx != -1)
-        {
-            for (int i = 0; i < pieceCount; i++)
+            if (rook && rookFromX >= 0 && rookFromX < 8 && rookToX >= 0 && rookToX < 8)
             {
-                if (pieces[i] == pieces[promotedIdx])
-                {
-                    delete pieces[i];
-                    pieces[i] = piece;
-                    pieceBoard[fromX][fromY] = piece;
-                    piece->setPosition(fromX * tileSize, fromY * tileSize);
-                    piece->setHasMoved(pieceHasMoved);
-                    break;
-                }
+                pieceBoard[rookToX][fromY] = nullptr;
+                pieceBoard[rookFromX][fromY] = rook;
+                rook->setPosition(rookFromX * tilesize, fromY * tilesize);
+                rook->setHasMoved(rookHasMoved);
             }
         }
 
-        lastDoubleMovedPawn = lastDoubleMovedPawnIdx == -1 ? nullptr : pieces[lastDoubleMovedPawnIdx];
+        lastDoubleMovedPawn = lastDoubleMovedPawnIdx >= 0 && lastDoubleMovedPawnIdx < 32 ? pieces[lastDoubleMovedPawnIdx] : nullptr;
         lastMoveTurn = lastMoveTurnBefore;
 
-        currentTurn = (currentTurn == COLOR_WHITE) ? COLOR_BLACK : COLOR_WHITE;
-        gameState = STATE_PLAYING;
+        currentTurn = (currentTurn == colorwhite) ? colorblack : colorwhite;
+        gameState = stateplaying;
     }
 
     void saveGameRecord()
@@ -752,68 +819,87 @@ public:
         {
             time_t now = time(0);
             char *dt = ctime(&now);
-            dt[strlen(dt) - 1] = '\0'; // Remove newline
-
-            file << dt << ", White: " << whitePlayerName << ", Black: " << blackPlayerName << ", Winner: ";
-            if (gameState == STATE_WHITE_WON)
+            if (dt)
             {
-                file << whitePlayerName;
+                dt[strlen(dt) - 1] = '\0';
+                file << dt << ", White: " << whitePlayerName << ", Black: " << blackPlayerName << ", Winner: ";
+                if (gameState == statewhitewon)
+                {
+                    file << whitePlayerName;
+                }
+                else if (gameState == stateblackwon)
+                {
+                    file << blackPlayerName;
+                }
+                else
+                {
+                    file << "Stalemate";
+                }
+                file << endl;
             }
-            else if (gameState == STATE_BLACK_WON)
-            {
-                file << blackPlayerName;
-            }
-            else
-            {
-                file << "Stalemate";
-            }
-            file << endl;
             file.close();
-        }
-        else
-        {
-            cerr << "Error: Failed to open game_records.txt for writing" << endl;
         }
     }
 
     void displayRecords()
     {
+        gameRecords.clear();
         ifstream file("game_records.txt");
         if (file.is_open())
         {
             string line;
-            cout << "Game Records:" << endl;
             while (getline(file, line))
             {
-                cout << line << endl;
+                gameRecords.push_back(line);
             }
             file.close();
-            cout << "Press Enter to continue..." << endl;
-            cin.get();
         }
         else
         {
-            cout << "No game records found." << endl;
-            cout << "Press Enter to continue..." << endl;
-            cin.get();
+            gameRecords.push_back("No game records found.");
+        }
+        gameState = staterecords;
+        sf::Event event;
+        while (window.pollEvent(event))
+        {
         }
     }
 
     void handleGameEvents(sf::Event &event)
     {
-        if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Z &&
-            sf::Keyboard::isKeyPressed(sf::Keyboard::LControl))
+        if (event.type == sf::Event::KeyPressed)
         {
-            undoMove();
-            return;
+            if (!keyPressed && event.key.code == sf::Keyboard::Z &&
+                sf::Keyboard::isKeyPressed(sf::Keyboard::LControl) && gameState == stateplaying)
+            {
+                undoMove();
+                keyPressed = true;
+            }
+            if (!keyPressed && event.key.code == sf::Keyboard::R &&
+                sf::Keyboard::isKeyPressed(sf::Keyboard::LControl))
+            {
+                if (gameState == staterecords)
+                {
+                    gameState = stateplaying;
+                    sf::Event clearEvent;
+                    while (window.pollEvent(clearEvent))
+                    {
+                    }
+                }
+                else
+                {
+                    displayRecords();
+                }
+                keyPressed = true;
+            }
+        }
+        if (event.type == sf::Event::KeyReleased)
+        {
+            keyPressed = false;
         }
 
-        if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::R &&
-            sf::Keyboard::isKeyPressed(sf::Keyboard::LControl))
-        {
-            displayRecords();
+        if (gameState != stateplaying)
             return;
-        }
 
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
         {
@@ -838,39 +924,36 @@ public:
             if (selectedPiece)
             {
                 sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
-                int col = (int)(mousePos.x / tileSize);
-                int row = (int)(mousePos.y / tileSize);
+                int col = (int)(mousePos.x / tilesize);
+                int row = (int)(mousePos.y / tilesize);
 
                 bool isEnPassant = isValidEnPassant(selectedPiece, col, row);
-                bool isCastling = dynamic_cast<King *>(selectedPiece) && abs(col - selectedPiece->getBoardX()) == 2;
+                bool isCastling = selectedPiece->getPieceType() == pieceking &&
+                                  abs(col - selectedPiece->getBoardX()) == 2;
                 bool isValid = (col >= 0 && col < 8 && row >= 0 && row < 8 &&
                                 (selectedPiece->isValidMove(col, row, pieceBoard) || isEnPassant));
 
-                // Reset position to avoid hanging
                 selectedPiece->getSprite().setPosition(
-                    selectedPiece->getBoardX() * tileSize + tileSize / 4,
-                    selectedPiece->getBoardY() * tileSize + tileSize / 4);
+                    selectedPiece->getBoardX() * tilesize + tilesize / 4,
+                    selectedPiece->getBoardY() * tilesize + tilesize / 4);
 
-                // Check if the move resolves check or is valid when not in check
-                bool inCheck = isKingInCheck(currentTurn);
+                int kingX = -1, kingY = -1;
+                bool inCheck = findKingPosition(currentTurn, kingX, kingY, pieceBoard) &&
+                               isKingInCheck(currentTurn, kingX, kingY, pieceBoard);
                 bool moveAllowed = false;
                 if (isValid)
                 {
-                    // Simulate the move to check if it resolves check
                     ChessPiece *tempBoard[8][8];
                     for (int i = 0; i < 8; i++)
                         for (int j = 0; j < 8; j++)
                             tempBoard[i][j] = pieceBoard[i][j];
 
-                    ChessPiece *captured = nullptr;
                     if (isEnPassant)
                     {
-                        captured = tempBoard[col][selectedPiece->getBoardY()];
                         tempBoard[col][selectedPiece->getBoardY()] = nullptr;
                     }
                     else if (tempBoard[col][row])
                     {
-                        captured = tempBoard[col][row];
                         tempBoard[col][row] = nullptr;
                     }
 
@@ -879,34 +962,33 @@ public:
                         int rookFromX = (col > selectedPiece->getBoardX()) ? 7 : 0;
                         int rookToX = (col > selectedPiece->getBoardX()) ? 5 : 3;
                         ChessPiece *rook = tempBoard[rookFromX][selectedPiece->getBoardY()];
-                        tempBoard[rookFromX][selectedPiece->getBoardY()] = nullptr;
-                        tempBoard[rookToX][selectedPiece->getBoardY()] = rook;
+                        if (rook)
+                        {
+                            tempBoard[rookFromX][selectedPiece->getBoardY()] = nullptr;
+                            tempBoard[rookToX][selectedPiece->getBoardY()] = rook;
+                        }
                     }
 
                     tempBoard[selectedPiece->getBoardX()][selectedPiece->getBoardY()] = nullptr;
                     tempBoard[col][row] = selectedPiece;
 
-                    bool stillInCheck = isKingInCheck(currentTurn);
-
-                    // Restore board
-                    tempBoard[selectedPiece->getBoardX()][selectedPiece->getBoardY()] = selectedPiece;
-                    tempBoard[col][row] = isEnPassant ? nullptr : captured;
-                    if (isEnPassant)
-                        tempBoard[col][selectedPiece->getBoardY()] = captured;
-                    if (isCastling)
+                    int newKingX, newKingY;
+                    if (selectedPiece->getPieceType() == pieceking)
                     {
-                        int rookFromX = (col > selectedPiece->getBoardX()) ? 7 : 0;
-                        int rookToX = (col > selectedPiece->getBoardX()) ? 5 : 3;
-                        ChessPiece *rook = tempBoard[rookToX][selectedPiece->getBoardY()];
-                        tempBoard[rookToX][selectedPiece->getBoardY()] = nullptr;
-                        tempBoard[rookFromX][selectedPiece->getBoardY()] = rook;
+                        newKingX = col;
+                        newKingY = row;
+                    }
+                    else
+                    {
+                        newKingX = kingX;
+                        newKingY = kingY;
                     }
 
-                    // Allow move if not in check or if it resolves check
+                    bool stillInCheck = isKingInCheck(currentTurn, newKingX, newKingY, tempBoard);
+
                     moveAllowed = (!inCheck && !stillInCheck) || (inCheck && !stillInCheck);
                 }
 
-                // Prevent castling when in check or through check
                 if (isCastling && isValid)
                 {
                     if (inCheck)
@@ -954,6 +1036,7 @@ public:
                     }
                     int capturedIdx = -1;
                     int promotedIdx = -1;
+                    int originalPieceType = selectedPiece->getPieceType();
                     int lastDoubleMovedPawnIdx = lastDoubleMovedPawn ? -1 : -1;
                     for (int i = 0; i < pieceCount; i++)
                     {
@@ -964,69 +1047,78 @@ public:
                         }
                     }
 
-                    // Store move data
-                    int idx = moveCount * 15;
+                    int idx = moveCount * 16;
                     moveHistory[idx] = pieceIdx;
                     moveHistory[idx + 1] = oldX;
                     moveHistory[idx + 2] = oldY;
                     moveHistory[idx + 3] = col;
                     moveHistory[idx + 4] = row;
-                    moveHistory[idx + 5] = -1; // capturedIdx, set later
+                    moveHistory[idx + 5] = -1;
                     moveHistory[idx + 6] = isEnPassant ? 1 : 0;
                     moveHistory[idx + 7] = isCastling ? 1 : 0;
-                    moveHistory[idx + 8] = 0; // rookFromX, set later
-                    moveHistory[idx + 9] = 0; // rookToX, set later
+                    moveHistory[idx + 8] = 0;
+                    moveHistory[idx + 9] = 0;
                     moveHistory[idx + 10] = selectedPiece->getHasMoved() ? 1 : 0;
-                    moveHistory[idx + 11] = 0;  // rookHasMoved, set later
-                    moveHistory[idx + 12] = -1; // promotedIdx, set later
-                    moveHistory[idx + 13] = lastDoubleMovedPawnIdx;
-                    moveHistory[idx + 14] = lastMoveTurn;
+                    moveHistory[idx + 11] = 0;
+                    moveHistory[idx + 12] = originalPieceType;
+                    moveHistory[idx + 13] = -1;
+                    moveHistory[idx + 14] = lastDoubleMovedPawnIdx;
+                    moveHistory[idx + 15] = lastMoveTurn;
 
-                    // Handle castling
                     if (isCastling)
                     {
                         int rookFromX = (col > oldX) ? 7 : 0;
                         int rookToX = (col > oldX) ? 5 : 3;
                         ChessPiece *rook = pieceBoard[rookFromX][oldY];
-                        moveHistory[idx + 8] = rookFromX;
-                        moveHistory[idx + 9] = rookToX;
-                        moveHistory[idx + 11] = rook->getHasMoved() ? 1 : 0;
-                        pieceBoard[rookFromX][oldY] = nullptr;
-                        pieceBoard[rookToX][oldY] = rook;
-                        rook->setPosition(rookToX * tileSize, oldY * tileSize);
+                        if (rook)
+                        {
+                            moveHistory[idx + 8] = rookFromX;
+                            moveHistory[idx + 9] = rookToX;
+                            moveHistory[idx + 11] = rook->getHasMoved() ? 1 : 0;
+                            pieceBoard[rookFromX][oldY] = nullptr;
+                            pieceBoard[rookToX][oldY] = rook;
+                            rook->setPosition(rookToX * tilesize, oldY * tilesize);
+                            rook->setHasMoved(true);
+                        }
                     }
 
-                    // Handle captures
                     if (isEnPassant)
                     {
-                        for (int i = 0; i < pieceCount; i++)
+                        ChessPiece *captured = pieceBoard[col][oldY];
+                        if (captured)
                         {
-                            if (pieces[i] == pieceBoard[col][oldY])
+                            capturedIdx = capturedPieces.size();
+                            capturedPieces.push_back(captured);
+                            moveHistory[idx + 5] = capturedIdx;
+                            for (int i = 0; i < pieceCount; i++)
                             {
-                                capturedIdx = i;
-                                break;
+                                if (pieces[i] == captured)
+                                {
+                                    pieces[i] = nullptr;
+                                    break;
+                                }
                             }
+                            pieceBoard[col][oldY] = nullptr;
                         }
-                        moveHistory[idx + 5] = capturedIdx;
-                        pieceBoard[col][oldY] = nullptr;
                     }
                     else if (pieceBoard[col][row])
                     {
+                        ChessPiece *captured = pieceBoard[col][row];
+                        capturedIdx = capturedPieces.size();
+                        capturedPieces.push_back(captured);
+                        moveHistory[idx + 5] = capturedIdx;
                         for (int i = 0; i < pieceCount; i++)
                         {
-                            if (pieces[i] == pieceBoard[col][row])
+                            if (pieces[i] == captured)
                             {
-                                capturedIdx = i;
+                                pieces[i] = nullptr;
                                 break;
                             }
                         }
-                        moveHistory[idx + 5] = capturedIdx;
-                        capturePiece(col, row);
+                        pieceBoard[col][row] = nullptr;
                     }
 
-                    // Update en passant tracking
-                    Pawn *pawn = dynamic_cast<Pawn *>(selectedPiece);
-                    if (pawn && abs(row - oldY) == 2)
+                    if (selectedPiece->getPieceType() == piecepawn && abs(row - oldY) == 2)
                     {
                         lastDoubleMovedPawn = selectedPiece;
                         lastMoveTurn = currentTurn;
@@ -1036,28 +1128,29 @@ public:
                         lastDoubleMovedPawn = nullptr;
                     }
 
-                    // Move piece
                     pieceBoard[oldX][oldY] = nullptr;
                     pieceBoard[col][row] = selectedPiece;
-                    selectedPiece->setPosition(col * tileSize, row * tileSize);
+                    selectedPiece->setPosition(col * tilesize, row * tilesize);
+                    selectedPiece->setHasMoved(true);
 
-                    // Handle promotion
-                    if (pawn)
+                    if (selectedPiece->getPieceType() == piecepawn)
                     {
-                        if ((pawn->getColor() == COLOR_WHITE && row == 0) ||
-                            (pawn->getColor() == COLOR_BLACK && row == 7))
+                        if ((selectedPiece->getColor() == colorwhite && row == 0) ||
+                            (selectedPiece->getColor() == colorblack && row == 7))
                         {
                             for (int i = 0; i < pieceCount; i++)
                             {
-                                if (pieces[i] == pawn)
+                                if (pieces[i] == selectedPiece)
                                 {
-                                    string texturePath = (pawn->getColor() == COLOR_WHITE) ? "../textures/white_queen.png" : "../textures/black_queen.png";
-                                    ChessPiece *newQueen = new Queen(col * tileSize, row * tileSize, texturePath, pawn->getColor());
+                                    string texturePath = (selectedPiece->getColor() == colorwhite) ? "../textures/white_queen.png" : "../textures/black_queen.png";
+                                    ChessPiece *newQueen = new Queen(col * tilesize, row * tilesize, texturePath, selectedPiece->getColor());
+                                    newQueen->setHasMoved(true);
+                                    capturedPieces.push_back(pieces[i]);
                                     pieces[i] = newQueen;
                                     promotedIdx = i;
-                                    moveHistory[idx + 12] = promotedIdx;
+                                    moveHistory[idx + 13] = promotedIdx;
                                     pieceBoard[col][row] = newQueen;
-                                    delete pawn;
+                                    selectedPiece = newQueen;
                                     break;
                                 }
                             }
@@ -1066,8 +1159,7 @@ public:
 
                     moveCount++;
 
-                    // Switch turn
-                    currentTurn = (currentTurn == COLOR_WHITE) ? COLOR_BLACK : COLOR_WHITE;
+                    currentTurn = (currentTurn == colorwhite) ? colorblack : colorwhite;
                     checkGameState();
                 }
 
@@ -1075,24 +1167,12 @@ public:
             }
         }
 
-        if (event.type == sf::Event::MouseMoved)
+        if (event.type == sf::Event::MouseMoved && gameState == stateplaying)
         {
             if (selectedPiece)
             {
                 sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
                 selectedPiece->getSprite().setPosition(mousePos - offset);
-            }
-        }
-    }
-
-    void capturePiece(int x, int y)
-    {
-        for (int i = 0; i < pieceCount; i++)
-        {
-            if (pieces[i] && pieces[i]->getBoardX() == x && pieces[i]->getBoardY() == y)
-            {
-                pieces[i] = nullptr;
-                break;
             }
         }
     }
@@ -1104,9 +1184,9 @@ public:
 
         for (int i = 0; i < pieceCount; i++)
         {
-            if (pieces[i] && dynamic_cast<King *>(pieces[i]))
+            if (pieces[i] && pieces[i]->getPieceType() == pieceking)
             {
-                if (pieces[i]->getColor() == COLOR_WHITE)
+                if (pieces[i]->getColor() == colorwhite)
                 {
                     whiteKingExists = true;
                 }
@@ -1119,13 +1199,33 @@ public:
 
         if (!whiteKingExists)
         {
-            gameState = STATE_BLACK_WON;
+            gameState = stateblackwon;
             saveGameRecord();
+            return;
         }
         else if (!blackKingExists)
         {
-            gameState = STATE_WHITE_WON;
+            gameState = statewhitewon;
             saveGameRecord();
+            return;
+        }
+
+        int kingX = -1, kingY = -1;
+        if (findKingPosition(currentTurn, kingX, kingY, pieceBoard))
+        {
+            bool inCheck = isKingInCheck(currentTurn, kingX, kingY, pieceBoard);
+            bool hasMoves = hasLegalMoves(currentTurn);
+
+            if (inCheck && !hasMoves)
+            {
+                gameState = (currentTurn == colorwhite) ? stateblackwon : statewhitewon;
+                saveGameRecord();
+            }
+            else if (!inCheck && !hasMoves)
+            {
+                gameState = statestalemate;
+                saveGameRecord();
+            }
         }
     }
 
@@ -1133,27 +1233,52 @@ public:
     {
         board->draw(window);
 
+        if (gameState == staterecords && fontLoaded)
+        {
+            sf::RectangleShape background(sf::Vector2f(windowlength, windowwidth));
+            background.setFillColor(sf::Color(0, 0, 0, 200));
+            window.draw(background);
+
+            sf::Text text;
+            text.setFont(font);
+            text.setCharacterSize(20);
+            text.setFillColor(sf::Color::White);
+
+            float yOffset = 50;
+            for (const auto &record : gameRecords)
+            {
+                text.setString(record);
+                text.setPosition(10, yOffset);
+                window.draw(text);
+                yOffset += 30;
+            }
+            return;
+        }
+
         if (selectedPiece)
         {
-            highlight.setPosition(selectedPiece->getBoardX() * tileSize,
-                                  selectedPiece->getBoardY() * tileSize);
+            highlight.setPosition(selectedPiece->getBoardX() * tilesize,
+                                  selectedPiece->getBoardY() * tilesize);
             window.draw(highlight);
         }
 
-        for (int i = 0; i < pieceCount; i++)
+        for (int i = 0; i < 8; i++)
         {
-            if (pieces[i])
+            for (int j = 0; j < 8; j++)
             {
-                pieces[i]->draw(window);
+                if (pieceBoard[i][j])
+                {
+                    pieceBoard[i][j]->draw(window);
+                }
             }
         }
 
-        if (useTime && fontLoaded)
+        if (useTime && fontLoaded && gameState == stateplaying)
         {
-            int whiteMinutes = static_cast<int>(whiteTime / 60);
-            int whiteSeconds = static_cast<int>(whiteTime) % 60;
-            int blackMinutes = static_cast<int>(blackTime / 60);
-            int blackSeconds = static_cast<int>(blackTime) % 60;
+            int whiteMinutes = (int)(whiteTime / 60);
+            int whiteSeconds = (int)whiteTime % 60;
+            int blackMinutes = (int)(blackTime / 60);
+            int blackSeconds = (int)blackTime % 60;
 
             char whiteBuffer[16];
             char blackBuffer[16];
@@ -1166,20 +1291,20 @@ public:
             window.draw(blackTimerText);
         }
 
-        if (gameState != STATE_PLAYING && fontLoaded)
+        if (gameState != stateplaying && gameState != staterecords && fontLoaded)
         {
             sf::Text text;
             text.setFont(font);
             text.setCharacterSize(50);
             text.setFillColor(sf::Color::Red);
             text.setStyle(sf::Text::Bold);
-            text.setPosition(windowWidth / 2 - 150, windowWidth / 2 - 25);
+            text.setPosition(windowwidth / 2 - 150, windowwidth / 2 - 25);
 
-            if (gameState == STATE_WHITE_WON)
+            if (gameState == statewhitewon)
                 text.setString("White Wins!");
-            else if (gameState == STATE_BLACK_WON)
+            else if (gameState == stateblackwon)
                 text.setString("Black Wins!");
-            else if (gameState == STATE_STALEMATE)
+            else if (gameState == statestalemate)
                 text.setString("Stalemate!");
 
             window.draw(text);
@@ -1194,6 +1319,13 @@ public:
             if (pieces[i])
             {
                 delete pieces[i];
+            }
+        }
+        for (auto piece : capturedPieces)
+        {
+            if (piece)
+            {
+                delete piece;
             }
         }
         delete[] moveHistory;
